@@ -114,35 +114,71 @@ uint16_t femu_nvme_rw_check_req(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
                                 uint64_t meta_size)
 {
 
-    if (elba > le64_to_cpu(ns->id_ns.nsze)) {
+    if (elba > (ns->start_block)+le64_to_cpu(ns->id_ns.nsze)) {
         nvme_set_error_page(n, req->sq->sqid, cmd->cid, NVME_LBA_RANGE,
                             offsetof(NvmeRwCmd, nlb), elba, ns->id);
+        printf("sungjin error1-1\n");
         return NVME_LBA_RANGE | NVME_DNR;
     }
     if (n->id_ctrl.mdts && data_size > n->page_size * (1 << n->id_ctrl.mdts)) {
         nvme_set_error_page(n, req->sq->sqid, cmd->cid, NVME_INVALID_FIELD,
                             offsetof(NvmeRwCmd, nlb), nlb, ns->id);
+        printf("sungjin error1-2\n");////
+        /*
+        print_sungjin(n->id_ctrl.mdts) : {10}
+        print_sungjin(data_size) : {1073741824}
+        print_sungjin(n->page_size) : {4096}
+
+        */
+        print_sungjin(n->id_ctrl.mdts);
+        print_sungjin(data_size);
+        print_sungjin(n->page_size );
         return NVME_INVALID_FIELD | NVME_DNR;
     }
     if (meta_size) {
         nvme_set_error_page(n, req->sq->sqid, cmd->cid, NVME_INVALID_FIELD,
                             offsetof(NvmeRwCmd, control), ctrl, ns->id);
+        printf("sungjin error1-3\n");
         return NVME_INVALID_FIELD | NVME_DNR;
     }
     if ((ctrl & NVME_RW_PRINFO_PRACT) && !(ns->id_ns.dps & DPS_TYPE_MASK)) {
         nvme_set_error_page(n, req->sq->sqid, cmd->cid, NVME_INVALID_FIELD,
                             offsetof(NvmeRwCmd, control), ctrl, ns->id);
         /* Not contemplated in LightNVM for now */
+        printf("sungjin error1-3\n");
         if (OCSSD(n)) {
             return 0;
         }
         return NVME_INVALID_FIELD | NVME_DNR;
     }
-    if (!req->is_write && find_next_bit(ns->uncorrectable, elba, slba) < elba) {
+    // if (!req->is_write && find_next_bit(ns->uncorrectable, elba, slba) < elba) {
+    if (!req->is_write && find_next_bit(ns->uncorrectable, (elba-ns->start_block), (slba-ns->start_block) ) < (elba-ns->start_block)) {
         nvme_set_error_page(n, req->sq->sqid, cmd->cid, NVME_UNRECOVERED_READ,
                             offsetof(NvmeRwCmd, slba), elba, ns->id);
+        printf("sungjin error1-4\n");
+        /*
+        print_sungjin(elba) : {8388609}
+        print_sungjin(slba) : {8388608}
+        print_sungjin(elba-ns->start_block) : {1}
+        print_sungjin(slba-ns->start_block) : {0}
+        print_sungjin(req->ns->id) : {2}
+        print_sungjin(ns->start_block) : {8388608}
+        print_sungjin(slba) : {8388608}
+        print_sungjin(elba) : {8388609}
+
+        */
+        print_sungjin(elba);
+        print_sungjin(slba);
+        print_sungjin(elba-ns->start_block);
+        print_sungjin(slba-ns->start_block);
         return NVME_UNRECOVERED_READ;
     }
+    // else{
+    //     print_sungjin(elba);
+    //     print_sungjin(slba);
+    //     print_sungjin(elba-ns->start_block);
+    //     print_sungjin(slba-ns->start_block);
+    // }
 
     return 0;
 }
@@ -305,5 +341,6 @@ void nvme_set_ctrl_name(FemuCtrl *n, const char *mn, const char *sn, int *dev_id
 
     subnqn = g_strdup_printf("nqn.2021-05.org.femu:%s", serial);
     strpadcpy((char *)id->subnqn, sizeof(id->subnqn), subnqn, '\0');
+    // print_sungjin(nvme_set_ctrl_name);
 }
 

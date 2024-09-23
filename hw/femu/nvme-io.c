@@ -1,6 +1,8 @@
 #include "./nvme.h"
-
+// #include "mstream/msftl.h"
 static uint16_t nvme_io_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req);
+
+
 
 static void nvme_update_sq_eventidx(const NvmeSQueue *sq)
 {
@@ -46,7 +48,7 @@ static void nvme_process_sq_io(void *opaque, int index_poller)
     NvmeCmd cmd;
     NvmeRequest *req;
     int processed = 0;
-
+    // print_sungjin(nvme_process_sq_io);
     nvme_update_sq_tail(sq);
     while (!(nvme_sq_empty(sq))) {
         if (sq->phys_contig) {
@@ -66,8 +68,10 @@ static void nvme_process_sq_io(void *opaque, int index_poller)
         req->expire_time = req->stime = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
         req->cqe.cid = cmd.cid;
         req->cmd_opcode = cmd.opcode;
+        // req->
+        
         memcpy(&req->cmd, &cmd, sizeof(NvmeCmd));
-
+        
         if (n->print_log) {
             femu_debug("%s,cid:%d\n", __func__, cmd.cid);
         }
@@ -75,7 +79,8 @@ static void nvme_process_sq_io(void *opaque, int index_poller)
         status = nvme_io_cmd(n, &cmd, req);
         if (1 && status == NVME_SUCCESS) {
             req->status = status;
-
+            req->cmd.cdw13=cmd.cdw13;
+            // printf("sungjin : nvme_process_sq_io : femu_ring_enqueue\n");
             int rc = femu_ring_enqueue(n->to_ftl[index_poller], (void *)&req, 1);
             if (rc != 1) {
                 femu_err("enqueue failed, ret=%d\n", rc);
@@ -84,7 +89,7 @@ static void nvme_process_sq_io(void *opaque, int index_poller)
             /* Normal I/Os that don't need delay emulation */
             req->status = status;
         } else {
-            femu_err("Error IO processed!\n");
+            femu_err("Error IO processed! %d\n",req->cmd_opcode);
         }
 
         processed++;
@@ -132,7 +137,7 @@ static void nvme_process_cq_cpl(void *arg, int index_poller)
     int rc;
     int i;
 
-    if (BBSSD(n) || ZNSSD(n)) {
+    if ( F2DPSSD(n) || FDPSSD(n) || BBSSD(n) || ZNSSD(n) || MSSSD(n)) {
         rp = n->to_poller[index_poller];
     }
 
@@ -195,7 +200,9 @@ void *nvme_poller(void *arg)
     FemuCtrl *n = ((NvmePollerThreadArgument *)arg)->n;
     int index = ((NvmePollerThreadArgument *)arg)->index;
     int i;
-
+    // print_sungjin(nvme_poller);
+    printf("nvme_poller start@@@@@@@@@@@@\n");
+    print_sungjin(n->multipoller_enabled);
     switch (n->multipoller_enabled) {
     case 1:
         while (1) {
@@ -230,7 +237,7 @@ void *nvme_poller(void *arg)
         }
         break;
     }
-
+    printf("nvme_poller end@@@@@@@@@@@@\n");
     return NULL;
 }
 
@@ -239,7 +246,8 @@ uint16_t nvme_rw(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd, NvmeRequest *req)
     NvmeRwCmd *rw = (NvmeRwCmd *)cmd;
     uint16_t ctrl = le16_to_cpu(rw->control);
     uint32_t nlb  = le16_to_cpu(rw->nlb) + 1;
-    uint64_t slba = le64_to_cpu(rw->slba);
+    // uint64_t slba = le64_to_cpu(rw->slba);
+    uint64_t slba = le64_to_cpu(rw->slba)+ns->start_block;
     uint64_t prp1 = le64_to_cpu(rw->prp1);
     uint64_t prp2 = le64_to_cpu(rw->prp2);
     const uint8_t lba_index = NVME_ID_NS_FLBAS_INDEX(ns->id_ns.flbas);
@@ -250,18 +258,25 @@ uint16_t nvme_rw(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd, NvmeRequest *req)
     uint64_t meta_size = nlb * ms;
     uint64_t elba = slba + nlb;
     uint16_t err;
+
     int ret;
 
     req->is_write = (rw->opcode == NVME_CMD_WRITE) ? 1 : 0;
 
     err = femu_nvme_rw_check_req(n, ns, cmd, req, slba, elba, nlb, ctrl,
                                  data_size, meta_size);
-    if (err)
+    if (err){
+        print_sungjin(req->ns->id);
+        print_sungjin(ns->start_block);
+        print_sungjin(slba);
+        print_sungjin(elba);
+        printf("sungjin error 1\n");
         return err;
-
+    }
     if (nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, data_size, n)) {
         nvme_set_error_page(n, req->sq->sqid, cmd->cid, NVME_INVALID_FIELD,
                             offsetof(NvmeRwCmd, prp1), 0, ns->id);
+                        printf("sungjin error 2\n");
         return NVME_INVALID_FIELD | NVME_DNR;
     }
 
@@ -269,14 +284,51 @@ uint16_t nvme_rw(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd, NvmeRequest *req)
 
     req->slba = slba;
     req->status = NVME_SUCCESS;
-    req->nlb = nlb;
+    req->nlb = (nlb-1);
 
     ret = backend_rw(n->mbe, &req->qsg, &data_offset, req->is_write);
     if (!ret) {
+        // printf("sungjin error 3\n");
         return NVME_SUCCESS;
     }
 
     return NVME_DNR;
+}
+static uint16_t nvme_io_mgmt_sungjin(FemuCtrl* n,NvmeNamespace* ns,
+                NvmeCmd* cmd,NvmeRequest* req){
+    print_sungjin(nvme_io_mgmt_sungjin);
+    int i;
+    uint64_t slba=0;
+    uint64_t end_lba=slba+le64_to_cpu(ns->id_ns.nsze);
+    print_sungjin(end_lba);
+    uint64_t clear_size= 256;
+    // for(slba=0;slba<end_lba;slba+=clear_size){
+    //     bitmap_clear(ns->util, slba, clear_size);
+    // }
+    for (i = 0; i < n->num_namespaces; i++) {
+        ns = &n->namespaces[i];
+        for(slba=0;slba<end_lba;slba+=clear_size){
+            bitmap_clear(ns->util, slba, clear_size);
+        }
+    }
+    return NVME_SUCCESS;
+}
+static uint16_t nvme_io_mgmt_send(FemuCtrl* n,NvmeNamespace* ns,NvmeCmd* cmd,NvmeRequest* req){
+    // NvmeCmd *cmd = &req->cmd;
+    uint32_t cdw10 = le32_to_cpu(cmd->cdw10);
+    uint8_t mo = (cdw10 & 0xff);
+
+    switch (mo) {
+    case NVME_IOMS_MO_NOP:
+        return NVME_SUCCESS;
+    case NVME_IOMS_MO_RUH_UPDATE:
+        // return nvme_io_mgmt_send_ruh_update(n, req);
+        return NVME_SUCCESS;
+    case NVME_IOMS_MO_SUNGJIN:
+        return nvme_io_mgmt_sungjin(n,ns,cmd,req);
+    default:
+        return NVME_INVALID_FIELD | NVME_DNR;
+    };
 }
 
 static uint16_t nvme_dsm(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
@@ -292,30 +344,58 @@ static uint16_t nvme_dsm(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
         uint16_t nr = (dw10 & 0xff) + 1;
 
         uint64_t slba;
+        // uint32_t slba;
         uint32_t nlb;
         NvmeDsmRange *range = g_malloc0(sizeof(NvmeDsmRange) * nr);
 
-        if (dma_write_prp(n, (uint8_t *)range, sizeof(range), prp1, prp2)) {
+        if (dma_write_prp(n, (uint8_t *)range, sizeof(NvmeDsmRange)*nr, prp1, prp2)) {
             nvme_set_error_page(n, req->sq->sqid, cmd->cid, NVME_INVALID_FIELD,
                                 offsetof(NvmeCmd, dptr.prp1), 0, ns->id);
             g_free(range);
+            printf("nvme_dsm WHY ERROR HERE?\n");
             return NVME_INVALID_FIELD | NVME_DNR;
         }
 
         req->status = NVME_SUCCESS;
         for (i = 0; i < nr; i++) {
             slba = le64_to_cpu(range[i].slba);
+            // slba = le32_to_cpu(range[i].slba);
             nlb = le32_to_cpu(range[i].nlb);
+            // print_sungjin(range[i].slba);
+            // print_sungjin(slba);
+
+            // printf("%lu %lu\n",range[i].slba,slba);
+            // print_sungjin(range[i].nlb);
+            // print_sungjin(nlb);
+
             if (slba + nlb > le64_to_cpu(ns->id_ns.nsze)) {
                 nvme_set_error_page(n, req->sq->sqid, cmd->cid, NVME_LBA_RANGE,
                                     offsetof(NvmeCmd, cdw10), slba + nlb, ns->id);
                 g_free(range);
+                // print_sungjin(slba) : {7813572098802581516}
+                // print_sungjin(nlb) : {4}
+                // print_sungjin(ns->id_ns.nsze) : {16777216}
+
+                print_sungjin(slba);
+                print_sungjin(nlb);
+                print_sungjin(ns->id_ns.nsze);
                 return NVME_LBA_RANGE | NVME_DNR;
             }
 
             bitmap_clear(ns->util, slba, nlb);
+            // if(MSSSD(n)){
+            //     msssd_trim2(n,slba,nlb);
+            // }
         }
-        g_free(range);
+        if(MSSSD(n)||FDPSSD(n) || F2DPSSD(n) ){
+            // msssd_trim2(n,slba,nlb);
+            // printf("sungjin : give pointer %p\n",range);
+            req->cmd.discard_range_pointer=(uint64_t)range;
+            cmd->discard_range_pointer=(uint64_t)range;
+        }else{
+            g_free(range);
+        }
+        
     }
     return NVME_SUCCESS;
 }
@@ -351,7 +431,8 @@ static uint16_t nvme_compare(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
                             offsetof(NvmeRwCmd, prp1), 0, ns->id);
         return NVME_INVALID_FIELD | NVME_DNR;
     }
-    if (find_next_bit(ns->uncorrectable, elba, slba) < elba) {
+    // if (find_next_bit(ns->uncorrectable, elba, slba) < elba) {
+    if (!req->is_write && find_next_bit(ns->uncorrectable, (elba-ns->start_block), (slba-ns->start_block) ) < elba) {
         return NVME_UNRECOVERED_READ;
     }
 
@@ -440,6 +521,14 @@ static uint16_t nvme_io_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req)
             return nvme_dsm(n, ns, cmd, req);
         }
         return NVME_INVALID_OPCODE | NVME_DNR;
+    case NVME_CMD_IO_MGMT_SEND:
+        printf("NVME_CMD_IO_MGMT_SEND sungjin\n");
+
+        return nvme_io_mgmt_send(n,ns,cmd,req);
+    case NVME_CMD_IO_MGMT_RECV:
+        printf("NVME_CMD_IO_MGMT_RECV sungjin\n");
+        // return nvme_io_mgmt_send(n,ns,cmd,req);
+        return NVME_SUCCESS;
     case NVME_CMD_COMPARE:
         if (NVME_ONCS_COMPARE & n->oncs) {
             return nvme_compare(n, ns, cmd, req);
@@ -457,6 +546,7 @@ static uint16_t nvme_io_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req)
         return NVME_INVALID_OPCODE | NVME_DNR;
     default:
         if (n->ext_ops.io_cmd) {
+            // printf("sungjin nvme_io_cmd @@@@@@\n");
             return n->ext_ops.io_cmd(n, ns, cmd, req);
         }
 

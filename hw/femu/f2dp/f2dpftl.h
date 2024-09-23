@@ -7,6 +7,20 @@
 #define INVALID_LPN     (~(0ULL))
 #define UNMAPPED_PPA    (~(0ULL))
 
+
+#define F2DP_RG_NUMBER 32
+#define F2DP_MAX_PID_NR 33
+#define F2DP_DEFAULT_STREAM (F2DP_MAX_PID_NR-1)
+
+#define RGIF 0
+#define VALID_FDP 0
+#define FDPA 0
+#define NVME_FDP_MAXPIDS 16
+// REG8(FDPA, 0x0)
+//     FIELD(FDPA, RGIF, 0, 4)
+//     FIELD(FDPA, VWC, 4, 1)
+//     FIELD(FDPA, VALID, 7, 1);
+
 enum {
     NAND_READ =  0,
     NAND_WRITE = 1,
@@ -84,6 +98,7 @@ struct nand_block {
     int vpc; /* valid page count */
     int erase_cnt;
     int wp; /* current write pointer */
+    int pid;
 };
 
 struct nand_plane {
@@ -116,8 +131,12 @@ struct ssdparams {
     int luns_per_ch;  /* # of LUNs per channel */
     int nchs;         /* # of channels in the SSD */
 
-    int nand_page_size_mb;
-    int nand_block_size_mb;
+
+    //fdp
+    int luns_per_rg;
+    int chnls_per_rg;
+    int rgs_per_chnl;
+    
 
     int pg_rd_lat;    /* NAND page read latency in nanoseconds */
     int pg_wr_lat;    /* NAND page program latency in nanoseconds */
@@ -157,8 +176,6 @@ struct ssdparams {
     int tt_pls;       /* total # of planes in the SSD */
 
     int tt_luns;      /* total # of LUNs in the SSD */
-
-
 };
 
 typedef struct line {
@@ -168,16 +185,33 @@ typedef struct line {
     QTAILQ_ENTRY(line) entry; /* in either {free,victim,full} list */
     /* position in the priority queue for victim lines */
     size_t                  pos;
+    int stream_id;
+    int rg_id;
 } line;
 
 /* wp: record next write addr */
 struct write_pointer {
-    struct line *curline;
-    int ch;
-    int lun;
-    int pg;
-    int blk;
+    struct line ** curline;
+    // int ch;
+    
+    // int pg;
+    // int blk;
     int pl;
+
+    // int start_die;
+    // int end_die;
+    int lun_nr;
+    int logical_lun; // logical
+
+    int physical_lun_map[64]; //spp->tt_luns == 64
+    int physical_blk_map[64];
+    int physical_pg_map[64];
+    unsigned int rg_bitmap;
+};
+
+struct sungjin_stat{
+    uint64_t copied;
+    uint64_t block_erased;
 };
 
 struct line_mgmt {
@@ -205,17 +239,97 @@ struct ssd {
     struct ssd_channel *ch;
     struct ppa *maptbl; /* page level mapping table */
     uint64_t *rmap;     /* reverse mapptbl, assume it's stored in OOB */
-    struct write_pointer wp;
-    struct line_mgmt lm;
-
+    struct write_pointer* wp;
+    struct line_mgmt* lm;
+    uint8_t stream_number;
+    uint8_t rg_number;
+    void* femuctrl;
     /* lockless ring for communication with NVMe IO thread */
     struct rte_ring **to_ftl;
     struct rte_ring **to_poller;
     bool *dataplane_started_ptr;
-    QemuThread ftl_thread;
+    QemuThread msftl_thread;
+    
+    bool f2dp_pid_map[(F2DP_MAX_PID_NR+1)];
+    struct sungjin_stat sungjin_stat;
+
 };
 
-void ssd_init(FemuCtrl *n);
+void f2dpssd_init(FemuCtrl *n);
+
+
+static inline NvmeLBAF *ms_ns_lbaf(NvmeNamespace *ns)
+{
+    NvmeIdNs *id_ns = &ns->id_ns;
+    return &id_ns->lbaf[NVME_ID_NS_FLBAS_INDEX(id_ns->flbas)];
+}
+
+static inline uint8_t ms_ns_lbads(NvmeNamespace *ns)
+{
+    /* NvmeLBAF */
+    return ms_ns_lbaf(ns)->lbads;
+}
+
+static inline size_t ms_l2b(NvmeNamespace *ns, uint64_t lba)
+{
+    return lba << ms_ns_lbads(ns);
+}
+
+
+////////////////////
+
+
+// static inline bool nvme_ph_valid(struct ssd *ns, uint16_t ph)
+// {
+//     return ph < ns->stream_number;
+// }
+
+// static inline bool nvme_rg_valid(struct ssd *ns, uint16_t rg)
+// {
+//     return rg < (spp->luns_per_ch*spp->nchs)/spp->luns_per_rg;
+// }
+
+// static inline uint16_t nvme_pid2rg(struct ssd *ns, uint16_t pid)
+// {
+//     uint16_t rgif = ns->rgif;
+
+//     if (!rgif) {
+//         return 0;
+//     }
+
+//     return pid >> (16 - rgif);
+// }
+
+
+// static inline uint16_t nvme_pid2ph(struct ssd *ns, uint16_t pid)
+// {
+//     uint16_t rgif = ns->endgrp->fdp.rgif;
+
+//     if (!rgif) {
+//         return pid;
+//     }
+
+//     return pid & ((1 << (15 - rgif)) - 1);
+// }
+
+// static inline bool nvme_parse_pid(struct ssd *ns, uint16_t pid,
+//                                   uint16_t *ph, uint16_t *rg)
+// {
+//     *rg = nvme_pid2rg(ns, pid);
+//     *ph = nvme_pid2ph(ns, pid);
+
+//     return nvme_ph_valid(ns, *ph) && nvme_rg_valid(ns->endgrp, *rg);
+// }
+
+
+
+
+
+
+
+
+
+// uint64_t msssd_trim2(FemuCtrl *n,uint64_t slba,uint64_t nlb);
 
 #ifdef FEMU_DEBUG_FTL
 #define ftl_debug(fmt, ...) \

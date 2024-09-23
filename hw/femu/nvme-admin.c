@@ -51,6 +51,8 @@ static const uint32_t nvme_cse_iocs_nvm[256] = {
     [NVME_CMD_READ]                 = NVME_CMD_EFF_CSUPP,
     [NVME_CMD_DSM]                  = NVME_CMD_EFF_CSUPP | NVME_CMD_EFF_LBCC,
     [NVME_CMD_COMPARE]              = NVME_CMD_EFF_CSUPP,
+    [NVME_CMD_IO_MGMT_SEND]       = NVME_CMD_EFF_CSUPP | NVME_CMD_EFF_LBCC,
+    [NVME_CMD_IO_MGMT_RECV]       = NVME_CMD_EFF_CSUPP,
 };
 
 static const uint32_t nvme_cse_iocs_zoned[256] = {
@@ -678,6 +680,24 @@ static uint16_t nvme_get_feature(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
     case NVME_SOFTWARE_PROGRESS_MARKER:
         cqe->n.result = cpu_to_le32(n->features.sw_prog_marker);
         break;
+    case NVME_FDP_MODE:
+        printf("sungjin nvme_get_feature FDP_MODE\n");
+
+        // femu_get_feature_fdp()
+        if(MSSSD(n)||FDPSSD(n) || F2DPSSD(n)){
+            return NVME_SUCCESS;
+        }else{  
+            return NVME_INVALID_FIELD | NVME_DNR;
+        }
+        break;
+    case NVME_FDP_EVENTS:
+        printf("sungjin nvme_get_feature FDP_EVENTS\n");
+        if(MSSSD(n)||FDPSSD(n) || F2DPSSD(n)){
+            return NVME_SUCCESS;
+        }else{  
+            return NVME_INVALID_FIELD | NVME_DNR;
+        }
+        break;
     default:
         return NVME_INVALID_FIELD | NVME_DNR;
     }
@@ -747,6 +767,24 @@ static uint16_t nvme_set_feature(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
         break;
     case NVME_SOFTWARE_PROGRESS_MARKER:
         n->features.sw_prog_marker = dw11;
+        break;
+    case NVME_FDP_MODE:
+        printf("sungjin nvme_get_feature FDP_MODE\n");
+
+        // femu_get_feature_fdp()
+        if(MSSSD(n)||FDPSSD(n) || F2DPSSD(n)){
+            return NVME_SUCCESS;
+        }else{  
+            return NVME_INVALID_FIELD | NVME_DNR;
+        }
+        break;
+    case NVME_FDP_EVENTS:
+        printf("sungjin nvme_get_feature FDP_EVENTS\n");
+        if(MSSSD(n)||FDPSSD(n) || F2DPSSD(n)){
+            return NVME_SUCCESS;
+        }else{  
+            return NVME_INVALID_FIELD | NVME_DNR;
+        }
         break;
     default:
         return NVME_INVALID_FIELD | NVME_DNR;
@@ -1101,7 +1139,7 @@ void nvme_process_sq_admin(void *opaque)
     hwaddr addr;
     NvmeCmd cmd;
     NvmeCqe cqe;
-
+    // printf("sungjin nvme_process_sq_admin\n");
     while (!(nvme_sq_empty(sq))) {
         if (sq->phys_contig) {
             addr = sq->dma_addr + sq->head * n->sqe_size;

@@ -116,8 +116,6 @@ struct ssdparams {
     int luns_per_ch;  /* # of LUNs per channel */
     int nchs;         /* # of channels in the SSD */
 
-    int nand_page_size_mb;
-    int nand_block_size_mb;
 
     int pg_rd_lat;    /* NAND page read latency in nanoseconds */
     int pg_wr_lat;    /* NAND page program latency in nanoseconds */
@@ -157,8 +155,6 @@ struct ssdparams {
     int tt_pls;       /* total # of planes in the SSD */
 
     int tt_luns;      /* total # of LUNs in the SSD */
-
-
 };
 
 typedef struct line {
@@ -168,6 +164,8 @@ typedef struct line {
     QTAILQ_ENTRY(line) entry; /* in either {free,victim,full} list */
     /* position in the priority queue for victim lines */
     size_t                  pos;
+    int stream_id;
+    int rg_id;
 } line;
 
 /* wp: record next write addr */
@@ -178,6 +176,11 @@ struct write_pointer {
     int pg;
     int blk;
     int pl;
+};
+
+struct sungjin_stat{
+    uint64_t copied;
+    uint64_t block_erased;
 };
 
 struct line_mgmt {
@@ -205,17 +208,41 @@ struct ssd {
     struct ssd_channel *ch;
     struct ppa *maptbl; /* page level mapping table */
     uint64_t *rmap;     /* reverse mapptbl, assume it's stored in OOB */
-    struct write_pointer wp;
+    struct write_pointer* wp;
     struct line_mgmt lm;
+    uint8_t stream_number;
 
+    
+    void* femuctrl;
     /* lockless ring for communication with NVMe IO thread */
     struct rte_ring **to_ftl;
     struct rte_ring **to_poller;
     bool *dataplane_started_ptr;
-    QemuThread ftl_thread;
+    QemuThread msftl_thread;
+    struct sungjin_stat sungjin_stat;
 };
 
-void ssd_init(FemuCtrl *n);
+void msssd_init(FemuCtrl *n);
+
+
+static inline NvmeLBAF *ms_ns_lbaf(NvmeNamespace *ns)
+{
+    NvmeIdNs *id_ns = &ns->id_ns;
+    return &id_ns->lbaf[NVME_ID_NS_FLBAS_INDEX(id_ns->flbas)];
+}
+
+static inline uint8_t ms_ns_lbads(NvmeNamespace *ns)
+{
+    /* NvmeLBAF */
+    return ms_ns_lbaf(ns)->lbads;
+}
+
+static inline size_t ms_l2b(NvmeNamespace *ns, uint64_t lba)
+{
+    return lba << ms_ns_lbads(ns);
+}
+
+// uint64_t msssd_trim2(FemuCtrl *n,uint64_t slba,uint64_t nlb);
 
 #ifdef FEMU_DEBUG_FTL
 #define ftl_debug(fmt, ...) \

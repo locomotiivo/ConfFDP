@@ -45,7 +45,8 @@ static void nvme_clear_ctrl(FemuCtrl *n, bool shutdown)
 
 static int nvme_start_ctrl(FemuCtrl *n)
 {
-    uint32_t page_bits = NVME_CC_MPS(n->bar.cc) + 12;
+    uint32_t page_bits = NVME_CC_MPS(n->bar.cc) + 12; //sungjin page_bits
+    // uint32_t page_bits = NVME_CC_MPS(n->bar.cc) + 14;
     uint32_t page_size = 1 << page_bits;
 
     if (n->cq[0] || n->sq[0] || !n->bar.asq || !n->bar.acq ||
@@ -336,15 +337,19 @@ static void nvme_ns_init_identify(FemuCtrl *n, NvmeIdNs *id_ns)
     id_ns->dpc           = n->dpc;
     id_ns->dps           = n->dps;
     id_ns->dlfeat        = 0x9;
-    id_ns->lbaf[0].lbads = 9;
+    id_ns->lbaf[0].lbads = 12; // sungjin lba size is 4096 , 16KB
+    // id_ns->lbaf[0].lbads = 14; // sungjin lba size is 4096 , 16KB
     id_ns->lbaf[0].ms    = 0;
 
-    npdg = 1;
+    // npdg = 1;
+    npdg=(n->bb_params.nand_page_size_kb<<10)/(n->bb_params.secsz);
     id_ns->npda = id_ns->npdg = npdg - 1;
 
-    for (i = 0; i < n->nlbaf; i++) {
-        id_ns->lbaf[i].lbads = BDRV_SECTOR_BITS + i;
-        id_ns->lbaf[i].ms    = cpu_to_le16(n->meta);
+    for (i = 1; i < n->nlbaf; i++) {
+        // id_ns->lbaf[i].lbads = BDRV_SECTOR_BITS + i;
+        id_ns->lbaf[i].lbads =12;
+        // id_ns->lbaf[i].ms    = cpu_to_le16(n->meta);
+         id_ns->lbaf[i].ms    =0;
     }
 }
 
@@ -358,6 +363,7 @@ static int nvme_init_namespace(FemuCtrl *n, NvmeNamespace *ns, Error **errp)
 
     lba_index = NVME_ID_NS_FLBAS_INDEX(ns->id_ns.flbas);
     num_blks = n->ns_size / ((1 << id_ns->lbaf[lba_index].lbads));
+
     id_ns->nuse = id_ns->ncap = id_ns->nsze = cpu_to_le64(num_blks);
 
     n->csi = NVME_CSI_NVM;
@@ -374,12 +380,14 @@ static int nvme_init_namespaces(FemuCtrl *n, Error **errp)
     int i;
 
     /* FIXME: FEMU only supports 1 namesapce now */
-    assert(n->num_namespaces == 1);
+    // assert(n->num_namespaces == 1);
 
     for (i = 0; i < n->num_namespaces; i++) {
         NvmeNamespace *ns = &n->namespaces[i];
         ns->size = n->ns_size;
-        ns->start_block = i * n->ns_size >> BDRV_SECTOR_BITS;
+        // ns->start_block = i * n->ns_size >> BDRV_SECTOR_BITS;
+        // ns->start_block = i * n->ns_size /((1 << ns->id_ns.lbaf[0].lbads));
+        ns->start_block = i * n->ns_size /(1<<12);
         ns->id = i + 1;
 
         if (nvme_init_namespace(n, ns, errp)) {
@@ -404,9 +412,14 @@ static void nvme_init_ctrl(FemuCtrl *n)
     id->ieee[0]      = 0x00;
     id->ieee[1]      = 0x02;
     id->ieee[2]      = 0xb3;
-    id->cmic         = 0;
+    
+    // id->cmic         = 0;
+    // id->cmic         = cpu_to_le16(1 << 1);
+    // id->cntlid=n->femu_mode;
+
     id->mdts         = n->mdts;
     id->ver          = 0x00010300;
+    
     /* TODO: NVME_OACS_NS_MGMT */
     id->oacs         = cpu_to_le16(n->oacs | NVME_OACS_DBBUF);
     id->acl          = n->acl;
@@ -447,6 +460,9 @@ static void nvme_init_ctrl(FemuCtrl *n)
     }
 
     n->bar.cap = 0;
+    if(MSSSD(n)||FDPSSD(n) || F2DPSSD(n)){
+        id->ctratt |= NVME_CTRATT_FDPS;
+    }
     NVME_CAP_SET_MQES(n->bar.cap, n->max_q_ents);
     NVME_CAP_SET_CQR(n->bar.cap, n->cqr);
     NVME_CAP_SET_AMS(n->bar.cap, 1);
@@ -482,6 +498,14 @@ static void nvme_init_pci(FemuCtrl *n)
 {
     uint8_t *pci_conf = n->parent_obj.config;
 
+
+    n->pci_simulation =g_malloc0(sizeof(PCIe_Gen3_x4));
+    n->pci_simulation->stime=0;
+    n->pci_simulation->ntime=0;
+    n->pci_simulation->bw=Interface_PCIeGen3x4_bw;
+    // int ret =pthread_spin_init(&n->pci_lock, PTHREAD_PROCESS_SHARED);
+    // if(ret)
+    //     femu_err("femu.c:477 nvme_init_pci(): lock alloc failed\n");
     pci_conf[PCI_INTERRUPT_PIN] = 1;
     /* Coperd: QEMU-OCSSD(0x1d1d,0x1f1f), QEMU-NVMe(0x8086,0x5845) */
     pci_config_set_prog_interface(pci_conf, 0x2);
@@ -523,7 +547,13 @@ static int nvme_register_extensions(FemuCtrl *n)
         nvme_register_bbssd(n);
     } else if (ZNSSD(n)) {
         nvme_register_znssd(n);
-    } else {
+    }else if(MSSSD(n)){
+        nvme_register_msssd(n);
+    }else if(FDPSSD(n)){
+        nvme_register_fdpssd(n);
+        /* TODO: For future extensions */
+    }else if(F2DPSSD(n)){
+        nvme_register_f2dpssd(n);
         /* TODO: For future extensions */
     }
 
@@ -542,9 +572,10 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
     }
 
     bs_size = ((int64_t)n->memsz) * 1024 * 1024;
-
+// 
     init_dram_backend(&n->mbe, bs_size);
     n->mbe->femu_mode = n->femu_mode;
+    // print_sungjin(n->stream_number);
 
     n->completed = 0;
     n->start_time = time(NULL);
@@ -653,6 +684,12 @@ static Property femu_props[] = {
     DEFINE_PROP_UINT16("vid", FemuCtrl, vid, 0x1d1d),
     DEFINE_PROP_UINT16("did", FemuCtrl, did, 0x1f1f),
     DEFINE_PROP_UINT8("femu_mode", FemuCtrl, femu_mode, FEMU_NOSSD_MODE),
+    DEFINE_PROP_UINT8("stream_number", FemuCtrl, stream_number, 4),
+
+    DEFINE_PROP_UINT8("rg_number", FemuCtrl, rg_number, 8),
+    // DEFINE_PROP_UINT8("stream_number", FemuCtrl, luns_per_rg, 2),
+    DEFINE_PROP_UINT8("handle_number", FemuCtrl, handle_number, 4),
+
     DEFINE_PROP_UINT8("flash_type", FemuCtrl, flash_type, MLC),
     DEFINE_PROP_UINT8("lver", FemuCtrl, lver, 0x2),
     DEFINE_PROP_UINT16("lsec_size", FemuCtrl, oc_params.sec_size, 4096),
@@ -672,6 +709,10 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("secs_per_pg", FemuCtrl, bb_params.secs_per_pg, 8),
     DEFINE_PROP_INT32("pgs_per_blk", FemuCtrl, bb_params.pgs_per_blk, 256),
     DEFINE_PROP_INT32("blks_per_pl", FemuCtrl, bb_params.blks_per_pl, 256),
+
+    DEFINE_PROP_INT32("nand_page_size_kb", FemuCtrl, bb_params.nand_page_size_kb, 16),
+    DEFINE_PROP_INT32("nand_block_size_mb", FemuCtrl, bb_params.nand_block_size_mb, 4),
+
     DEFINE_PROP_INT32("pls_per_lun", FemuCtrl, bb_params.pls_per_lun, 1),
     DEFINE_PROP_INT32("luns_per_ch", FemuCtrl, bb_params.luns_per_ch, 8),
     DEFINE_PROP_INT32("nchs", FemuCtrl, bb_params.nchs, 8),
