@@ -15,7 +15,6 @@
 #include "backend/dram.h"
 #include "inc/rte_ring.h"
 #include "inc/pqueue.h"
-#include "nand/nand.h"
 #include "timing-model/timing.h"
 
 #define NVME_ID_NS_LBADS(ns)                                                  \
