@@ -1328,14 +1328,14 @@ static int do_gc(struct ssd *ssd, bool force,int lun_id)
         }
         pg_iter->status=PG_FREE;
     }
-    ssd->sungjin_stat.copied+=cnt;
+    ssd->fs_stat.copied+=cnt;
 
     struct nand_block *blk = get_blk(ssd, &ppa);
     blk->ipc = 0;
     blk->vpc = 0;
     blk->erase_cnt++;
     blk->pid=-1;
-    ssd->sungjin_stat.block_erased++;
+    ssd->fs_stat.block_erased++;
     struct nand_cmd gce;
     gce.type = GC_IO;
     gce.cmd = NAND_ERASE;
@@ -1370,7 +1370,7 @@ static int do_gc(struct ssd *ssd, bool force,int lun_id)
     
 
 
-    // ssd->sungjin_stat.copied+=cnt;
+    // ssd->fs_stat.copied+=cnt;
 
     //  // erase
     // for(ch =start_ch_id ; ch<=end_ch_id; ch++){
@@ -1383,7 +1383,7 @@ static int do_gc(struct ssd *ssd, bool force,int lun_id)
     //         blk->ipc = 0;
     //         blk->vpc = 0;
     //         blk->erase_cnt++;
-    //         ssd->sungjin_stat.block_erased++;
+    //         ssd->fs_stat.block_erased++;
     //         struct nand_cmd gce;
     //         gce.type = GC_IO;
     //         gce.cmd = NAND_ERASE;
@@ -1431,8 +1431,8 @@ static uint64_t ssd_read(struct ssd *ssd, NvmeRequest *req)
     //         block erased
     //     */
     //     // print_stat()
-    //     print_sungjin(ssd->sungjin_stat.block_erased);
-    //      print_sungjin(ssd->sungjin_stat.copied);
+    //     print_sungjin(ssd->fs_stat.block_erased);
+    //      print_sungjin(ssd->fs_stat.copied);
     //     return 0;
     // }
     if (end_lpn >= spp->tt_pgs) {
@@ -1519,8 +1519,8 @@ static uint64_t f2dpssd_io_mgmt_recv_ruhs(struct ssd* ssd, NvmeRequest* req,size
     }
     // total_free_line/=rg;
     // hdr->free_space_ratio=(uint8_t)(total_free_line*100/(ssd->lm[0].tt_lines*ssd->rg_number));
-    // hdr->copied_page=ssd->sungjin_stat.copied;
-    // hdr->block_erased=ssd->sungjin_stat.block_erased;
+    // hdr->copied_page=ssd->fs_stat.copied;
+    // hdr->block_erased=ssd->fs_stat.block_erased;
     // ruhid=ns-
     // int stream;
     // for(stream=0;stream<nruhsd;stream++,ruhsd++){
@@ -1576,11 +1576,11 @@ static uint64_t f2dpssd_io_mgmt_send_sungjin(struct ssd* ssd, NvmeRequest* req){
     print_sungjin(spp->blks_per_line);
     print_sungjin(spp->pgs_per_line);
 
-    print_sungjin(ssd->sungjin_stat.block_erased);
-    print_sungjin(ssd->sungjin_stat.copied);
+    print_sungjin(ssd->fs_stat.block_erased);
+    print_sungjin(ssd->fs_stat.copied);
 
-    ssd->sungjin_stat.block_erased=0;
-    ssd->sungjin_stat.copied=0;
+    ssd->fs_stat.block_erased=0;
+    ssd->fs_stat.copied=0;
 
     for (i = 0; i < spp->nchs; i++) {
         // ssd_init_ch(&ssd->ch[i], spp,false);
@@ -2111,8 +2111,8 @@ static void *f2dpftl_thread(void *arg)
     /* FIXME: not safe, to handle ->to_ftl and ->to_poller gracefully */
     ssd->to_ftl = n->to_ftl;
     ssd->to_poller = n->to_poller;
-    ssd->sungjin_stat.block_erased=0;
-    ssd->sungjin_stat.copied=0;
+    ssd->fs_stat.block_erased=0;
+    ssd->fs_stat.copied=0;
     while (1) {
         for (i = 1; i <= n->nr_pollers; i++) {
             if (!ssd->to_ftl[i] || !femu_ring_count(ssd->to_ftl[i]))

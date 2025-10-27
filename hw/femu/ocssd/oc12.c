@@ -1,4 +1,5 @@
 #include "./oc12.h"
+#include "../nand/nand.h"
 
 static inline int qemu_fls(int i)
 {

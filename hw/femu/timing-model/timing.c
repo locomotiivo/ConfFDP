@@ -1,4 +1,5 @@
 #include "../nvme.h"
+#include "../nand/nand.h"
 
 void set_latency(FemuCtrl *n)
 {

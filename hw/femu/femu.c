@@ -2,6 +2,7 @@
 #include "hw/qdev-properties.h"
 
 #include "./nvme.h"
+#include "./nand/nand.h"
 
 #define NVME_SPEC_VER (0x00010400)
 

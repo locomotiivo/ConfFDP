@@ -1,4 +1,5 @@
 #include "../nvme.h"
+#include "nand.h"
 
 /*
  * Lower/Upper page pairing in one block

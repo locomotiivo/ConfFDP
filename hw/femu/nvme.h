@@ -15,7 +15,6 @@
 #include "backend/dram.h"
 #include "inc/rte_ring.h"
 #include "inc/pqueue.h"
-#include "nand/nand.h"
 #include "timing-model/timing.h"
 
 #define NVME_ID_NS_LBADS(ns)                                                  \
@@ -422,6 +421,7 @@ enum NvmeIoms2Mo {
     NVME_IOMS_MO_NOP = 0x0,
     NVME_IOMS_MO_RUH_UPDATE = 0x1,
     NVME_IOMS_MO_SUNGJIN=0x2,
+    NVME_IOMS_MO_SUNGJIN_READONLY=0x10,  /* Read-only stats (no reset) */
     NVME_F2DP_PID_ALLOC=0x3,
     NVME_F2DP_PID_REALLOC=0x4,
     NVME_F2DP_PID_FREE=0x5,

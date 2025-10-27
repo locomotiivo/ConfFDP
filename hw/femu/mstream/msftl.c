@@ -1004,7 +1004,7 @@ static int do_gc(struct ssd *ssd, bool force)
             }
         }
     }
-    ssd->sungjin_stat.copied+=cnt;
+    ssd->fs_stat.copied+=cnt;
     // printf("sungjin copy ok\n");
 
 // erase
@@ -1018,7 +1018,7 @@ static int do_gc(struct ssd *ssd, bool force)
             blk->ipc = 0;
             blk->vpc = 0;
             blk->erase_cnt++;
-            ssd->sungjin_stat.block_erased++;
+            ssd->fs_stat.block_erased++;
             // if (spp->enable_gc_delay) {
                 struct nand_cmd gce;
                 gce.type = GC_IO;
@@ -1068,8 +1068,8 @@ static uint64_t ssd_read(struct ssd *ssd, NvmeRequest *req)
     //         block erased
     //     */
     //     // print_stat()
-    //     print_sungjin(ssd->sungjin_stat.block_erased);
-    //      print_sungjin(ssd->sungjin_stat.copied);
+    //     print_sungjin(ssd->fs_stat.block_erased);
+    //      print_sungjin(ssd->fs_stat.copied);
     //     return 0;
     // }
     if (end_lpn >= spp->tt_pgs) {
@@ -1140,8 +1140,8 @@ static uint64_t msssd_io_mgmt_recv_ruhs(struct ssd* ssd, NvmeRequest* req,size_t
     hdr->nruhsd=cpu_to_le16(nruhsd);
     // return (ssd->lm.free_line_cnt <= ssd->sp.gc_thres_lines);
     // hdr->free_space_ratio=(uint8_t)(ssd->lm.free_line_cnt*100/ssd->lm.tt_lines);
-    // hdr->copied_page=ssd->sungjin_stat.copied;
-    // hdr->block_erased=ssd->sungjin_stat.block_erased;
+    // hdr->copied_page=ssd->fs_stat.copied;
+    // hdr->block_erased=ssd->fs_stat.block_erased;
     // ruhid=ns-
     int stream;
     for(stream=0;stream<nruhsd;stream++,ruhsd++){
@@ -1168,11 +1168,11 @@ static uint64_t msssd_io_mgmt_send_sungjin(struct ssd* ssd, NvmeRequest* req){
     print_sungjin(spp->pgs_per_line);
     print_sungjin(req->ns->start_block);
     print_sungjin(req->ns->id_ns.lbaf[0].lbads);
-    print_sungjin(ssd->sungjin_stat.block_erased);
-    print_sungjin(ssd->sungjin_stat.copied);
+    print_sungjin(ssd->fs_stat.block_erased);
+    print_sungjin(ssd->fs_stat.copied);
 
-    ssd->sungjin_stat.block_erased=0;
-    ssd->sungjin_stat.copied=0;
+    ssd->fs_stat.block_erased=0;
+    ssd->fs_stat.copied=0;
 
     for (i = 0; i < spp->nchs; i++) {
         ssd_init_ch(&ssd->ch[i], spp,false);
@@ -1447,8 +1447,8 @@ static void *msftl_thread(void *arg)
     /* FIXME: not safe, to handle ->to_ftl and ->to_poller gracefully */
     ssd->to_ftl = n->to_ftl;
     ssd->to_poller = n->to_poller;
-    ssd->sungjin_stat.block_erased=0;
-    ssd->sungjin_stat.copied=0;
+    ssd->fs_stat.block_erased=0;
+    ssd->fs_stat.copied=0;
     while (1) {
         for (i = 1; i <= n->nr_pollers; i++) {
             if (!ssd->to_ftl[i] || !femu_ring_count(ssd->to_ftl[i]))

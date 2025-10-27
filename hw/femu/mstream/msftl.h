@@ -178,7 +178,7 @@ struct write_pointer {
     int pl;
 };
 
-struct sungjin_stat{
+struct fs_stat{
     uint64_t copied;
     uint64_t block_erased;
 };
@@ -219,7 +219,7 @@ struct ssd {
     struct rte_ring **to_poller;
     bool *dataplane_started_ptr;
     QemuThread msftl_thread;
-    struct sungjin_stat sungjin_stat;
+    struct fs_stat fs_stat;
 };
 
 void msssd_init(FemuCtrl *n);

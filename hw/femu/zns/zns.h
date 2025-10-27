@@ -1,15 +1,16 @@
 #ifndef __FEMU_ZNS_H
 #define __FEMU_ZNS_H
 
+#include "../nvme.h"
+#include "../nand/nand.h"
+#include "zftl.h"
+
 #define SPG_BITS    (2)
 #define PG_BITS     (16)
 #define BLK_BITS    (32)
 #define PL_BITS     (1)
 #define FC_BITS     (2)
 #define CH_BITS     (1)
-
-#include "../nvme.h"
-#include "zftl.h"
 
 #define LOGICAL_PAGE_SIZE (4*KiB)
 #define ZNS_PAGE_SIZE (16*KiB)

@@ -5,7 +5,7 @@
 #define BUF_SIZE (1<<20)
 #define MAX_NR_QUEUE 1
 
-#define print_sungjin(member) printf("%s %lu\n",(#member),(uint64_t)(member));
+#define print_info(member) printf("%s %lu\n",(#member),(uint64_t)(member));
 /*
 device name --> dev_type
 nvme --> block
@@ -92,18 +92,18 @@ int main(int argc,char**argv){
     int err;
     
     dev_ = xnvme_dev_open(DEVICE, &opts);
-    print_sungjin(xnvme_dev_open);
+    print_info(xnvme_dev_open);
     if (!dev_) {
         printf("error 1\n");
         return 0;
     }
     geo_ = xnvme_dev_get_geo(dev_);
-    print_sungjin(xnvme_dev_get_geo);
+    print_info(xnvme_dev_get_geo);
 
     for(int i=0;i<MAX_NR_QUEUE;i++){
         queues_[i] = NULL;
         err=xnvme_queue_init(dev_,qdepth,0,&queues_[i]);
-        //  print_sungjin(xnvme_queue_init);
+        //  print_info(xnvme_queue_init);
         if(err){
             printf("Error 2 :%d\n",i);
             return 0;
@@ -117,22 +117,22 @@ int main(int argc,char**argv){
         printf("xnvme_buf_alloc error\n");
         return 0;
     }
-    print_sungjin(xnvme_buf_alloc);
+    print_info(xnvme_buf_alloc);
     xqueue=xnvme_queues_;
     // xnvme_queues_.pop();
     xnvme_ctx = xnvme_queue_get_cmd_ctx(xqueue);
-     print_sungjin(xnvme_queue_get_cmd_ctx);
+     print_info(xnvme_queue_get_cmd_ctx);
     xnvme_ctx->async.cb = async_cb;
     xnvme_ctx->async.cb_arg = xqueue;
     xnvme_ctx->dev = dev_;
 
     nlb=(BUF_SIZE>>geo_->ssw)-1;
     nsid=xnvme_dev_get_nsid(dev_);
-    print_sungjin(nsid);
+    print_info(nsid);
     // printf("nsid %lu\n",nsid);
     
     // xnvme_prep_nvm(xnvme_ctx,XNVME_SPEC_NVM_OPC_WRITE,nsid,slba,nlb);
-    //  print_sungjin(xnvme_prep_nvm);
+    //  print_info(xnvme_prep_nvm);
     // xnvme_ctx->cmd.nvm.dtype = 2;
     // xnvme_ctx->cmd.nvm.cdw13.dspec = 1;
     struct nvme_fdp_ruh_status ruh_status;
@@ -150,9 +150,9 @@ int main(int argc,char**argv){
       printf("Failed to perform xNVMe IO command\n");
       return err;
     }
-    print_sungjin(xnvme_cmd_pass);
+    print_info(xnvme_cmd_pass);
   err = xnvme_queue_drain(xqueue);
-  print_sungjin(xnvme_queue_drain);
+  print_info(xnvme_queue_drain);
   if (err < 0) printf("Failed to drain xNVMe queue\n");
 
 
@@ -162,10 +162,10 @@ int main(int argc,char**argv){
     // ,ruh_status.copied_page,ruh_status.block_erased)
   
     // printf("")
-    print_sungjin(ruh_status.nruhsd);
-    print_sungjin(ruh_status.max_placement_id_nr);
+    print_info(ruh_status.nruhsd);
+    print_info(ruh_status.max_placement_id_nr);
 
-    print_sungjin(ruh_status.reclaim_group_nr);
+    print_info(ruh_status.reclaim_group_nr);
     for(int i=0;i<ruh_status.nruhsd;i++){
         /*
           uint16_t pid;

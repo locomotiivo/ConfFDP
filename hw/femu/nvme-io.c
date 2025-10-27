@@ -1,4 +1,5 @@
 #include "./nvme.h"
+#include "./fdp/fdpftl.h"
 // #include "mstream/msftl.h"
 static uint16_t nvme_io_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req);
 
@@ -325,6 +326,7 @@ static uint16_t nvme_io_mgmt_send(FemuCtrl* n,NvmeNamespace* ns,NvmeCmd* cmd,Nvm
         // return nvme_io_mgmt_send_ruh_update(n, req);
         return NVME_SUCCESS;
     case NVME_IOMS_MO_SUNGJIN:
+    case NVME_IOMS_MO_SUNGJIN_READONLY:
         return nvme_io_mgmt_sungjin(n,ns,cmd,req);
     default:
         return NVME_INVALID_FIELD | NVME_DNR;

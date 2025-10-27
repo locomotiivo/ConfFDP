@@ -3,7 +3,7 @@
 # Run FEMU as a black-box SSD (FTL managed by the device)
 
 # image directory
-HOME=/home/sungjin
+HOME=/home/hajin
 IMGDIR=$HOME/images
 # Virtual machine disk image
 OSIMGF=$IMGDIR/fdp.qcow2
@@ -27,8 +27,10 @@ blk_er_lat=2000000 # block erase latency
 ch_xfer_lat=25000 # channel transfer time, ignored for now
 
 # GC Threshold (1-100)
-gc_thres_pcent=75
-gc_thres_pcent_high=95
+# gc_thres_pcent=75
+# gc_thres_pcent_high=95
+gc_thres_pcent=60
+gc_thres_pcent_high=80
 
 #-----------------------------------------------------------------------
 NAND_PAGE_SIZE_KB=4
@@ -39,7 +41,7 @@ NAND_BLOCK_SIZE_MB=16
 rg_number=1 # 1~64
 handle_number=8 # should be power of 2, smaller than luns_per_ch*nchs
 
-# sudo gdb /home/sungjin/ConfFDP/build-femu/qemu-system-x86_64
+# sudo gdb /home/hajin/ConfFDP/build-femu/qemu-system-x86_64
 #  run   -name "FEMU-MSSSD-VM" \
 #     -enable-kvm \
 #     -cpu host \
@@ -66,8 +68,10 @@ handle_number=8 # should be power of 2, smaller than luns_per_ch*nchs
 G12=12288
 G30=30720
 G64=65536
+G4=4096
 
-
+# ssd_size=$G12
+#ssd_size=4096
 ssd_size=$G64
 
 #Compose the entire FEMU BBSSD command line options

@@ -7,15 +7,87 @@
 #define INVALID_LPN     (~(0ULL))
 #define UNMAPPED_PPA    (~(0ULL))
 
-
 #define RGIF 0
 #define VALID_FDP 0
 #define FDPA 0
 #define NVME_FDP_MAXPIDS 256
-// REG8(FDPA, 0x0)
-//     FIELD(FDPA, RGIF, 0, 4)
-//     FIELD(FDPA, VWC, 4, 1)
-//     FIELD(FDPA, VALID, 7, 1);
+
+/* FDP Event Log constants */
+#define FDP_MAX_EVENTS 63
+#define FDP_EVT_MAX 0xff
+
+/* FDP Event Types (from NVMe spec) */
+enum FdpEventType {
+    FDP_EVT_RU_NOT_FULLY_WRITTEN    = 0x0,
+    FDP_EVT_RU_ATL_EXCEEDED         = 0x1,
+    FDP_EVT_CTRL_RESET_RUH          = 0x2,
+    FDP_EVT_INVALID_PID             = 0x3,
+    FDP_EVT_MEDIA_REALLOC           = 0x80,
+    FDP_EVT_RUH_IMPLICIT_RU_CHANGE  = 0x81,
+};
+
+/* FDP Event Flags */
+enum FdpEventFlags {
+    FDPEF_PIV   = 1 << 0,  /* Placement Identifier Valid */
+    FDPEF_NSIDV = 1 << 1,  /* NSID Valid */
+    FDPEF_LV    = 1 << 2,  /* Location Valid */
+};
+
+/* FDP Event structure */
+struct fdp_event {
+    uint8_t  type;
+    uint8_t  flags;
+    uint16_t pid;
+    uint64_t timestamp;
+    uint32_t nsid;
+    uint64_t type_specific[2];
+    uint16_t rgid;
+    uint16_t ruhid;
+    uint8_t  rsvd[4];
+    uint8_t  vendor[24];
+};
+
+/* FDP Event Buffer (circular buffer) */
+struct fdp_event_buffer {
+    struct fdp_event events[FDP_MAX_EVENTS];
+    unsigned int nelems;
+    unsigned int start;
+    unsigned int next;
+};
+
+/* FDP Reclaim Unit */
+struct fdp_ru {
+    uint64_t ruamw;  /* Reclaim Unit Available Media Writes */
+};
+
+/* FDP Reclaim Unit Handle */
+struct fdp_ruh {
+    uint8_t  ruht;          /* RUH Type */
+    uint8_t  ruha;          /* RUH Attributes */
+    uint64_t event_filter;  /* Per-RUH event filter */
+    uint64_t ruamw;         /* Initial RUAMW for new RUs */
+    struct fdp_ru *rus;     /* RUs indexed by reclaim group */
+};
+
+/* FDP Statistics */
+struct fdp_stats {
+    uint64_t hbmw;  /* Host Bytes with Metadata Written */
+    uint64_t mbmw;  /* Media Bytes with Metadata Written */
+    uint64_t mbe;   /* Media Bytes Erased */
+};
+
+/* FDP Configuration */
+struct fdp_config {
+    bool enabled;
+    uint16_t nruh;           /* Number of Reclaim Unit Handles */
+    uint16_t nrg;            /* Number of Reclaim Groups */
+    uint8_t  rgif;           /* Reclaim Group Identifier Format */
+    uint64_t runs;           /* Reclaim Unit Nominal Size */
+    struct fdp_ruh *ruhs;    /* Reclaim Unit Handles */
+    struct fdp_event_buffer host_events;  /* Host-initiated events */
+    struct fdp_event_buffer ctrl_events;  /* Controller-initiated events */
+    struct fdp_stats stats;
+};
 
 enum {
     NAND_READ =  0,
@@ -126,12 +198,10 @@ struct ssdparams {
     int luns_per_ch;  /* # of LUNs per channel */
     int nchs;         /* # of channels in the SSD */
 
-
     //fdp
     int luns_per_rg;
     int chnls_per_rg;
     int rgs_per_chnl;
-    
 
     int pg_rd_lat;    /* NAND page read latency in nanoseconds */
     int pg_wr_lat;    /* NAND page program latency in nanoseconds */
@@ -192,12 +262,14 @@ struct write_pointer {
     int pg;
     int blk;
     int pl;
+    //fdp
     uint64_t written;
 };
 
-struct sungjin_stat{
+struct fs_stat{
     uint64_t copied;
     uint64_t block_erased;
+    //fdp
     uint64_t discard;
     uint64_t discard_ignored;
     uint64_t invalidated;
@@ -232,25 +304,38 @@ struct ssd {
     struct ssd_channel *ch;
     struct ppa *maptbl; /* page level mapping table */
     uint64_t *rmap;     /* reverse mapptbl, assume it's stored in OOB */
+    uint8_t stream_number;
+    void* femuctrl;
+    
+    //fdp
     struct write_pointer** wp;
     struct line_mgmt* lm;
-    // union{
-        uint8_t stream_number;
-        uint8_t handle_number;
-    // };
+    uint8_t handle_number;
     uint8_t rg_number;
-    void* femuctrl;
     bool debug;
+    struct fdp_config fdp;  /* FDP configuration and state */
+
     /* lockless ring for communication with NVMe IO thread */
     struct rte_ring **to_ftl;
     struct rte_ring **to_poller;
     bool *dataplane_started_ptr;
     QemuThread msftl_thread;
-    struct sungjin_stat sungjin_stat;
+    struct fs_stat fs_stat;
 };
 
 void fdpssd_init(FemuCtrl *n);
 
+/* FDP Event Log functions */
+uint64_t fdpssd_get_event_log(struct ssd *ssd, NvmeRequest *req);
+void fdpssd_log_event(struct ssd *ssd, uint8_t event_type, uint16_t pid,
+                      uint32_t nsid, uint16_t rgid, uint16_t ruhid, bool host_event);
+
+/* FDP Handle Update */
+uint64_t fdpssd_handle_update(struct ssd *ssd, NvmeRequest *req);
+bool fdpssd_update_ruh(struct ssd *ssd, uint16_t pid, uint32_t nsid);
+
+/* FDP initialization */
+void fdpssd_init_fdp(struct ssd *ssd, uint16_t nruh, uint16_t nrg, uint64_t runs);
 
 static inline NvmeLBAF *ms_ns_lbaf(NvmeNamespace *ns)
 {
@@ -269,67 +354,15 @@ static inline size_t ms_l2b(NvmeNamespace *ns, uint64_t lba)
     return lba << ms_ns_lbads(ns);
 }
 
-
-////////////////////
-
-
-// static inline bool nvme_ph_valid(struct ssd *ns, uint16_t ph)
-// {
-//     return ph < ns->stream_number;
-// }
-
-// static inline bool nvme_rg_valid(struct ssd *ns, uint16_t rg)
-// {
-//     return rg < (spp->luns_per_ch*spp->nchs)/spp->luns_per_rg;
-// }
-
-// static inline uint16_t nvme_pid2rg(struct ssd *ns, uint16_t pid)
-// {
-//     uint16_t rgif = ns->rgif;
-
-//     if (!rgif) {
-//         return 0;
-//     }
-
-//     return pid >> (16 - rgif);
-// }
-
-
-// static inline uint16_t nvme_pid2ph(struct ssd *ns, uint16_t pid)
-// {
-//     uint16_t rgif = ns->endgrp->fdp.rgif;
-
-//     if (!rgif) {
-//         return pid;
-//     }
-
-//     return pid & ((1 << (15 - rgif)) - 1);
-// }
-
-// static inline bool nvme_parse_pid(struct ssd *ns, uint16_t pid,
-//                                   uint16_t *ph, uint16_t *rg)
-// {
-//     *rg = nvme_pid2rg(ns, pid);
-//     *ph = nvme_pid2ph(ns, pid);
-
-//     return nvme_ph_valid(ns, *ph) && nvme_rg_valid(ns->endgrp, *rg);
-// }
-
-
-
-
-
-
-
-
-
-// uint64_t msssd_trim2(FemuCtrl *n,uint64_t slba,uint64_t nlb);
-
 #ifdef FEMU_DEBUG_FTL
 #define ftl_debug(fmt, ...) \
     do { printf("[FEMU] FTL-Dbg: " fmt, ## __VA_ARGS__); } while (0)
+#define fdp_debug(x) \
+    do { printf("[FEMU] FDP-Dbg: %s = %ld\n", #x, (long)(x)); } while (0)
 #else
 #define ftl_debug(fmt, ...) \
+    do { } while (0)
+#define fdp_debug(x) \
     do { } while (0)
 #endif
 
