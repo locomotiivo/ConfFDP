@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <mutex>
 #include <queue>
+#include <stdint.h>
 #include <string>
 #include <memory>
 #include <libxnvme.h>
@@ -16,16 +17,32 @@
 #define TORFS_ALIGNMENT (4 * KB)
 #define MAX_IO_SIZE (64 * KB)
 
+class DeviceGeometry {
+public:
+    DeviceGeometry() = default;
+    DeviceGeometry& operator=(const DeviceGeometry&) = default;
+
+    explicit DeviceGeometry(uint64_t offset, uint32_t size, uint8_t *buf)
+        : offset_{offset}, size_{size}, buf_{buf} {}
+
+    uint64_t offset_;
+    uint32_t size_;
+    uint8_t *buf_;
+    uint8_t dtype_ = 0;
+    uint16_t dspec_ = 0;
+    void EnableDirective(uint16_t dspec);
+};
+
 class Xnvme_Backend {
 public:
-    Xnvme_Backend(std::string dev, std::string async_io, std::string be): dev(dev), async_io(async_io), be(be), nsid(0) {};
+    Xnvme_Backend(): nsid(0) {};
     ~Xnvme_Backend() { Exit(); }
 
-    uint32_t nsid;
-    std::string dev;
-    std::string dev_type;
-    std::string async_io;
-    std::string be;
+    uint64_t slba = 0;
+    uint64_t nlb;
+    uint64_t nsid;
+
+    struct xnvme_opts opts;
 
     std::mutex xnvme_mutex;
     std::queue<struct xnvme_queue*> xnvme_queues_;
@@ -39,20 +56,40 @@ public:
 
     void* AllocBuf(uint32_t size);
     void FreeBuf(void* buf);
-    void FreeBuf(void* buf, uint32_t size);
+    int Deallocate(const DeviceGeometry& geo);
 
-    void SetDev(const std::string &name) { dev = name; }
-    void SetAsyncType(const std::string &type) { async_io = type; }
-
-private:
-    int Async(int dio);
-    virtual struct xnvme_opts GetOpt() = 0;
     int Init();
     void Exit();
-    uint64_t GetNlb();
-    uint32_t GetLbaShift();
-    static void async_cb(struct xnvme_cmd_ctx *ctx, void *cb_arg);
-    // int SubmitXNvmeAsyncCmd(struct xnvme_queue *xqueue, const DeviceGeometry &geo, TorfsDIO dio);
-    // int SubmitDeallocate(const DeviceGeometry &geo);
 
+    uint64_t GetNlb() { return geo_->nsect; }
+    uint32_t GetLbaShift() { return geo_->ssw; }
+
+private:
+    const unsigned int qdepth_ = MAX_NR_QUEUE;
+    int Async(int dio);
+    virtual struct xnvme_opts GetOpt(std::string dev_type) = 0;
+    static void async_cb(struct xnvme_cmd_ctx *ctx, void *cb_arg);
+    int SubmitXNvmeAsyncCmd(struct xnvme_queue *xqueue, const DeviceGeometry &geo, int io);
+    int SubmitDeallocate(const DeviceGeometry &geo);
+
+};
+
+class IOInterface {
+public:
+    explicit IOInterface(const std::string &dev, const std::string &async_io, const std::string &be);
+    ~IOInterface();
+  
+    int Read(uint64_t offset, uint32_t size, void *buf);
+    int Write(uint64_t offset, uint32_t size, const void *buf);
+    int Deallocate(uint64_t offset, uint32_t size);
+    uint64_t GetNlba();
+    uint64_t GetBlockSize();
+    void* AllocBuf(uint32_t size);
+    void FreeBuf(void* buf);
+    void FreeBuf(void* buf, uint32_t size);
+    std::shared_ptr<Xnvme_Backend> be_interface_;
+
+private:
+    DeviceGeometry PrepIO(uint64_t offset, uint32_t size, const void *buf);
+    int DoIO(uint64_t offset, uint32_t size, const void *buf, uint16_t placementID, int io);
 };
