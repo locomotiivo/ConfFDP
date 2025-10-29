@@ -209,7 +209,7 @@ struct write_pointer {
     unsigned int rg_bitmap;
 };
 
-struct sungjin_stat{
+struct fs_stat{
     uint64_t copied;
     uint64_t block_erased;
 };
@@ -251,7 +251,7 @@ struct ssd {
     QemuThread msftl_thread;
     
     bool f2dp_pid_map[(F2DP_MAX_PID_NR+1)];
-    struct sungjin_stat sungjin_stat;
+    struct fs_stat fs_stat;
 
 };
 

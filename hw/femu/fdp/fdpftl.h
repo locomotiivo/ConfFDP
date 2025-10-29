@@ -189,7 +189,7 @@ struct write_pointer {
     uint64_t written;
 };
 
-struct sungjin_stat{
+struct fs_stat{
     uint64_t copied;
     uint64_t block_erased;
     //fdp
@@ -242,11 +242,16 @@ struct ssd {
     struct rte_ring **to_poller;
     bool *dataplane_started_ptr;
     QemuThread msftl_thread;
-    struct sungjin_stat sungjin_stat;
+    struct fs_stat fs_stat;
 };
 
 void fdpssd_init(FemuCtrl *n);
 
+// TODO: EVENT LOG
+void fdpssd_get_event_log(struct ssd *ssd, NvmeRequest *req);
+void fdpssd_set_event_log(struct ssd *ssd, NvmeRequest *req);
+// TODO: HANDLE UPDATE
+void fdpssd_handle_update(struct ssd *ssd, NvmeRequest *req);
 
 static inline NvmeLBAF *ms_ns_lbaf(NvmeNamespace *ns)
 {
@@ -264,8 +269,6 @@ static inline size_t ms_l2b(NvmeNamespace *ns, uint64_t lba)
 {
     return lba << ms_ns_lbads(ns);
 }
-
-// uint64_t msssd_trim2(FemuCtrl *n,uint64_t slba,uint64_t nlb);
 
 #ifdef FEMU_DEBUG_FTL
 #define ftl_debug(fmt, ...) \
