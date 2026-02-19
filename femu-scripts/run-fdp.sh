@@ -27,10 +27,10 @@ blk_er_lat=2000000 # block erase latency
 ch_xfer_lat=25000 # channel transfer time, ignored for now
 
 # GC Threshold (1-100)
-# gc_thres_pcent=75
-# gc_thres_pcent_high=95
-gc_thres_pcent=60
-gc_thres_pcent_high=80
+gc_thres_pcent=75
+gc_thres_pcent_high=95
+# gc_thres_pcent=60
+# gc_thres_pcent_high=80
 
 #-----------------------------------------------------------------------
 NAND_PAGE_SIZE_KB=4
